@@ -80,19 +80,53 @@ def get_session():
         pass
 
     print("🔒 Bitwarden vault is locked.")
-    print("Please unlock your vault by running:")
-    print("  bw unlock")
-    print("And then set the BW_SESSION environment variable:")
-    print("  $env:BW_SESSION=\"<session_key>\"")
-    print("-" * 50)
-    
-    # Prompt the user directly in the terminal to enter/paste their session key
-    session_key = input("🔑 Please paste your BW_SESSION key: ").strip()
-    if not session_key:
-        print("❌ No session key provided. Aborting sync.")
+    master_password = input("🔑 Enter your Bitwarden Master Password: ").strip()
+    if not master_password:
+        print("❌ No password provided. Aborting sync.")
         sys.exit(1)
-        
-    return session_key
+
+    print("\n🔓 Unlocking vault...")
+    bw_path = find_bw_executable()
+    if not bw_path:
+        raise FileNotFoundError("Bitwarden CLI ('bw') was not found on your system.")
+
+    env = os.environ.copy()
+    env["PATH"] = r"C:\Program Files\nodejs;" + env.get("PATH", "")
+    is_windows = os.name == "nt"
+
+    process = subprocess.Popen(
+        [bw_path, "unlock"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        text=True,
+        shell=is_windows
+    )
+    
+    stdout, stderr = process.communicate(input=master_password + "\n")
+
+    if process.returncode != 0:
+        print(f"❌ Failed to unlock: {stderr.strip() or stdout.strip()}")
+        sys.exit(1)
+
+    # Parse session key from stdout
+    import re
+    match = re.search(r'BW_SESSION="([^"]+)"', stdout)
+    if match:
+        session_key = match.group(1)
+        print("✅ Vault unlocked successfully!")
+        return session_key
+    else:
+        # Fallback parsing in case output format differs
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("?") and "vault" not in line.lower() and "session" not in line.lower() and len(line) > 50:
+                print("✅ Vault unlocked successfully!")
+                return line
+        print(f"❌ Could not parse session key from output: {stdout}")
+        sys.exit(1)
+
 
 def main():
     print("=" * 60)
