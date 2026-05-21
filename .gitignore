@@ -3,6 +3,7 @@
 *.env
 .env.*
 !*.example
+performance_report.md
 
 # Keys
 *.key
