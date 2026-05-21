@@ -3,6 +3,15 @@ import sys
 import json
 import subprocess
 import shutil
+import io
+
+# Force UTF-8 output encoding for Windows consoles to support emojis in output
+if sys.platform.startswith("win"):
+    try:
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    except Exception:
+        pass
 
 def find_bw_executable():
     # 1. Search system PATH
