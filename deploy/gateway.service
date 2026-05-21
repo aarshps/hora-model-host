@@ -1,0 +1,15 @@
+[Unit]
+Description=Hora Model Host API Gateway
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/hora-model-host
+ExecStart=/opt/hora-model-host/venv/bin/uvicorn gateway.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
