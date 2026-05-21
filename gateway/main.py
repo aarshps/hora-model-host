@@ -39,6 +39,24 @@ def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)
 # Local HTTPX Async Client for proxying
 client = httpx.AsyncClient(base_url=config.OLLAMA_BASE_URL, timeout=600.0)
 
+@app.get("/", status_code=200)
+async def root_check():
+    """Public unauthenticated root check endpoint."""
+    return {
+        "status": "healthy",
+        "gateway": "online",
+        "message": "Hora Model Host Gateway is online."
+    }
+
+@app.get("/v1", status_code=200)
+async def v1_check():
+    """Public unauthenticated v1 check endpoint."""
+    return {
+        "status": "healthy",
+        "gateway": "online",
+        "message": "Hora Model Host Gateway API v1 is online."
+    }
+
 @app.get("/health", status_code=200)
 async def health_check():
     """Public unauthenticated health check endpoint."""

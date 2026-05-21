@@ -70,3 +70,56 @@ for chunk in response:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="", flush=True)
 ```
+
+---
+
+## OpenCode TUI Integration
+
+You can natively test and use our secure remote Gemma 4 instance via [OpenCode](https://opencode.ai), a premium, state-of-the-art terminal-based AI assistant.
+
+### 1. Configure Provider (`~/.config/opencode/opencode.json`)
+Add the custom `hora-gemma` provider to your global OpenCode config:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "hora-gemma/gemma4:e4b",
+  "provider": {
+    "hora-gemma": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Hora Gemma 4",
+      "options": {
+        "baseURL": "http://185.194.218.92:8000/v1",
+        "timeout": 600000,
+        "chunkTimeout": 60000
+      },
+      "models": {
+        "gemma4:e4b": {
+          "name": "Gemma 4 (4B)"
+        }
+      }
+    }
+  }
+}
+```
+
+### 2. Configure Credentials (`~/.local/share/opencode/auth.json`)
+Add the secure Bearer API Key matching the custom provider name:
+
+```json
+{
+  "hora-gemma": {
+    "type": "api",
+    "key": "hora_live_8e94a7cb2c114f0c9780a1d3fbc9581f"
+  }
+}
+```
+
+### 3. Run directly!
+```bash
+# Direct command completion check:
+opencode run "Hello! Tell me a one-sentence greeting." --model hora-gemma/gemma4:e4b --pure --dangerously-skip-permissions
+
+# Full interactive chat session:
+opencode run --model hora-gemma/gemma4:e4b --pure --dangerously-skip-permissions
+```
