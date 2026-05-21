@@ -4,6 +4,7 @@ import json
 import subprocess
 import shutil
 import io
+import base64
 
 # Force UTF-8 output encoding for Windows consoles to support emojis in output
 if sys.platform.startswith("win"):
@@ -55,7 +56,12 @@ def run_bw_command(args, session_key=None, input_data=None):
         shell=is_windows
     )
     
-    stdout, stderr = process.communicate(input=input_data)
+    # Bitwarden CLI create/edit commands expect base64-encoded JSON on stdin
+    encoded_input = input_data
+    if input_data and any(verb in args for verb in ["create", "edit"]):
+        encoded_input = base64.b64encode(input_data.encode("utf-8")).decode("utf-8")
+    
+    stdout, stderr = process.communicate(input=encoded_input)
     
     if process.returncode != 0:
         raise RuntimeError(f"Bitwarden CLI error: {stderr.strip() or stdout.strip()}")
@@ -80,10 +86,17 @@ def get_session():
         pass
 
     print("🔒 Bitwarden vault is locked.")
-    master_password = input("🔑 Enter your Bitwarden Master Password: ").strip()
+    master_password = os.environ.get("BW_PASSWORD")
+    if master_password:
+        print("🔑 Using master password from BW_PASSWORD environment variable.")
+        master_password = master_password.strip()
+    else:
+        master_password = input("🔑 Enter your Bitwarden Master Password: ").strip()
+        
     if not master_password:
         print("❌ No password provided. Aborting sync.")
         sys.exit(1)
+
 
     print("\n🔓 Unlocking vault...")
     bw_path = find_bw_executable()
