@@ -360,7 +360,7 @@ curl -X POST http://YOUR_VPS_IP:8000/v1/chat/completions \
 
 ## OpenCode TUI Integration
 
-[OpenCode](https://opencode.ai) is a terminal-based AI assistant that supports custom OpenAI-compatible providers. This allows you to chat with your self-hosted Gemma 4 directly from a terminal TUI.
+[OpenCode](https://opencode.ai) is a terminal-based AI assistant that supports custom OpenAI-compatible providers. This allows you to chat with your self-hosted models directly from a terminal TUI.
 
 ### Prerequisites
 - Install Node.js 18+ and npm
@@ -375,11 +375,11 @@ Create/edit the config file:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "hora-gemma/gemma4:e4b",
+  "model": "hora-model-host/qwen3.6:35b",
   "provider": {
-    "hora-gemma": {
+    "hora-model-host": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Hora Gemma 4",
+      "name": "Hora Model Host",
       "options": {
         "baseURL": "http://YOUR_VPS_IP:8000/v1",
         "timeout": 600000,
@@ -388,6 +388,12 @@ Create/edit the config file:
       "models": {
         "gemma4:e4b": {
           "name": "Gemma 4 (4B)"
+        },
+        "gemma4:31b": {
+          "name": "Gemma 4 (31B)"
+        },
+        "qwen3.6:35b": {
+          "name": "Qwen 3.6 (35B-A3B)"
         }
       }
     }
@@ -405,7 +411,7 @@ Create/edit the auth file:
 
 ```json
 {
-  "hora-gemma": {
+  "hora-model-host": {
     "type": "api",
     "key": "YOUR_API_KEY"
   }
@@ -415,12 +421,16 @@ Create/edit the auth file:
 ### Step 3: Run!
 
 ```bash
-# One-shot query:
-opencode run "Tell me a fun space fact." --model hora-gemma/gemma4:e4b --pure --dangerously-skip-permissions
+# One-shot query using the default model (Qwen 3.6 35B):
+opencode run "Tell me a fun space fact." --pure --dangerously-skip-permissions
+
+# One-shot query targeting Gemma 4 31B:
+opencode run "Tell me a fun space fact." --model hora-model-host/gemma4:31b --pure --dangerously-skip-permissions
 
 # Interactive chat session:
-opencode run --model hora-gemma/gemma4:e4b --pure --dangerously-skip-permissions
+opencode run --pure --dangerously-skip-permissions
 ```
+
 
 ---
 

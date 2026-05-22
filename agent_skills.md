@@ -207,17 +207,27 @@ curl -X POST http://185.194.218.92:8000/v1/chat/completions \
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "hora-gemma/gemma4:e4b",
+  "model": "hora-model-host/qwen3.6:35b",
   "provider": {
-    "hora-gemma": {
+    "hora-model-host": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "Hora Gemma 4",
+      "name": "Hora Model Host",
       "options": {
         "baseURL": "http://185.194.218.92:8000/v1",
         "timeout": 600000,
         "chunkTimeout": 60000
       },
-      "models": { "gemma4:e4b": { "name": "Gemma 4 (4B)" } }
+      "models": {
+        "gemma4:e4b": {
+          "name": "Gemma 4 (4B)"
+        },
+        "gemma4:31b": {
+          "name": "Gemma 4 (31B)"
+        },
+        "qwen3.6:35b": {
+          "name": "Qwen 3.6 (35B-A3B)"
+        }
+      }
     }
   }
 }
@@ -225,7 +235,12 @@ curl -X POST http://185.194.218.92:8000/v1/chat/completions \
 
 ### Auth Configuration
 ```json
-{ "hora-gemma": { "type": "api", "key": "<API_KEY>" } }
+{
+  "hora-model-host": {
+    "type": "api",
+    "key": "<API_KEY>"
+  }
+}
 ```
 
 ### Key Timeout Settings
@@ -233,6 +248,7 @@ curl -X POST http://185.194.218.92:8000/v1/chat/completions \
 - `chunkTimeout: 60000` (1 min) — covers slow CPU token generation
 
 ---
+
 
 ## 8. Performance Benchmarks
 
