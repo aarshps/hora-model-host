@@ -44,7 +44,7 @@ def main():
 [Service]
 Environment="OLLAMA_MAX_LOADED_MODELS=3"
 Environment="OLLAMA_NUM_PARALLEL=2"
-Environment="OLLAMA_KEEP_ALIVE=-1"
+Environment="OLLAMA_KEEP_ALIVE=5m"
 EOF
         systemctl daemon-reload
         systemctl restart ollama

@@ -512,7 +512,7 @@ systemctl restart ollama
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| First request takes 1-2 min | Ollama loading model into RAM (cold start) | Wait; or set `OLLAMA_KEEP_ALIVE=-1` |
+| First request takes 1-2 min | Ollama loading model into RAM (cold start) | Wait; or set `OLLAMA_KEEP_ALIVE=5m` |
 | `401 Unauthorized` | Missing or wrong Bearer token | Verify API_KEY in `.env` and client config |
 | OpenCode hangs on connect | Missing public `/` or `/v1` endpoints | Ensure gateway has unauthenticated root routes |
 | `502 Bad Gateway` | Ollama not running or crashed | `systemctl restart ollama` |
@@ -544,7 +544,7 @@ Ollama unloads models after 5 minutes of inactivity by default. For production u
 # Add to Ollama's systemd override
 systemctl edit ollama
 # Add under [Service]:
-Environment="OLLAMA_KEEP_ALIVE=-1"
+Environment="OLLAMA_KEEP_ALIVE=5m"
 ```
 
 ### 🔧 Environment Path Inheritance

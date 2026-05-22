@@ -115,7 +115,7 @@ EnvironmentFile=/opt/hora-model-host/.env
 
 ### Ollama Keep-Alive
 Default: 5 min inactivity → model unloads → next request cold-starts (~50s-2min).
-Production fix: Set `OLLAMA_KEEP_ALIVE=-1` in systemd override to keep model in RAM.
+Production fix: Set `OLLAMA_KEEP_ALIVE=5m` in systemd override to keep model in RAM.
 
 ---
 
@@ -283,7 +283,7 @@ curl -X POST http://185.194.218.92:8000/v1/chat/completions \
 
 ## 10. Optimization Recommendations
 
-1. **Permanent Model Residency**: Set `OLLAMA_KEEP_ALIVE=-1` in Ollama systemd overrides
+1. **Permanent Model Residency**: Set `OLLAMA_KEEP_ALIVE=5m` in Ollama systemd overrides
    to eliminate cold-start latency entirely.
 
 2. **HTTPS/TLS**: Deploy a Caddy or Nginx reverse proxy with Let's Encrypt auto-SSL
