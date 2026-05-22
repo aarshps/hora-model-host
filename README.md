@@ -227,7 +227,7 @@ Follow these steps to replicate this entire setup from scratch on your own VPS.
 
 ### Phase 1: VPS Provisioning
 
-1. **Provision a VPS** with at least 6 vCPU, 16 GB RAM, and 100 GB SSD (e.g., [Contabo VPS M](https://contabo.com)).
+1. **Provision a VPS** with at least 6 vCPU, 16 GB RAM, and 100 GB SSD (e.g., [Contabo VPS M](https://contabo.com)). For hosting frontier reasoning or MoE models, 12 vCPU and 48 GB RAM (e.g., Contabo VPS XL) is recommended.
 2. **Choose Ubuntu 24.04 LTS** as the operating system.
 3. **Note your server's public IP address** (e.g., `185.194.218.92`).
 4. **Generate an SSH keypair** for secure access:
@@ -514,7 +514,7 @@ systemctl restart ollama
 
 | Metric | Value |
 |---|---|
-| **Hardware** | AMD EPYC vCPU (6 cores), 16 GB RAM |
+| **Hardware** | AMD EPYC CPU (12 Cores, 48GB RAM, No GPU) |
 | **Model** | Gemma 4 E4B (4-bit quantized, 9.6 GB) |
 | **Cold Start (TTFT)** | ~50 seconds – 2 minutes |
 | **Active Generation** | 9.13 tokens/second |

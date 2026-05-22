@@ -238,7 +238,7 @@ curl -X POST http://185.194.218.92:8000/v1/chat/completions \
 
 | Metric               | Value                                    |
 |----------------------|------------------------------------------|
-| Hardware             | AMD EPYC vCPU (6 cores), 16 GB RAM      |
+| Hardware             | AMD EPYC CPU (12 Cores, 48GB RAM, No GPU)|
 | Model                | Gemma 4 E4B (4-bit quantized, 9.6 GB)   |
 | Cold Start (TTFT)    | ~50 seconds – 2 minutes                 |
 | Active Generation    | 9.13 tokens/second                       |
