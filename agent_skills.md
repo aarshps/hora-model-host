@@ -228,3 +228,45 @@ Qwen 3.6 35B generates tokens more than twice as fast as Gemma 4 31B (1.19 t/s v
 2. **HTTPS/TLS**: Deploy a Caddy or Nginx reverse proxy with Let's Encrypt auto-SSL in front of port 8000 for production-grade encryption in the future.
 
 3. **Rate Limiting**: Add FastAPI middleware for per-IP rate limiting to prevent abuse.
+
+---
+
+## 11. OpenClaw Telegram Bot Setup ("Con Taboclo")
+
+OpenClaw is installed globally on the VPS as a self-hosted AI agent platform linking your local Ollama instance with your Telegram Account.
+
+### Key Identifiers
+| Parameter | Value |
+|---|---|
+| **Telegram Bot** | `@con_taboclou_bot` (http://t.me/con_taboclou_bot) |
+| **Bot Token** | `8083785144:AAH4O8cbAmkFzxGtI2u4TzGyGO4wWtDn1hg` |
+| **Agent ID** | `con-taboclo` |
+| **Display Name** | `"Con Taboclo"` (configured via `IDENTITY.md`) |
+| **Primary LLM** | `ollama/qwen3.6:35b` (local Ollama instance on `http://127.0.0.1:11434`) |
+| **Workspace** | `/root/.openclaw/workspace` |
+| **Config File** | `/root/.openclaw/openclaw.json` (JSON5) |
+| **Systemd Service** | `openclaw-gateway.service` (root user-level systemd) |
+
+### Service Management Commands
+To manage OpenClaw, you must set `XDG_RUNTIME_DIR` in your SSH environment so systemd can locate the root user-level bus:
+```bash
+# Check service health
+export XDG_RUNTIME_DIR=/run/user/0 && systemctl --user status openclaw-gateway
+
+# Restart service (required after any manual openclaw.json edits)
+export XDG_RUNTIME_DIR=/run/user/0 && systemctl --user restart openclaw-gateway
+
+# View live trailing logs
+export XDG_RUNTIME_DIR=/run/user/0 && journalctl --user -u openclaw-gateway -f -n 50 --no-pager
+```
+
+### DM Pairing & Account Access (CRITICAL)
+For security, OpenClaw operates on a least-privilege model. You must authorize your personal Telegram account to interact with the bot:
+1. Message `@con_taboclou_bot` on Telegram and send `/start`.
+2. The bot will print a **Pairing Code** (e.g. `ABCDEFGH`) in its logs or in the chat.
+3. Approve the pairing request via SSH to link your account:
+   ```bash
+   openclaw pairing approve telegram <CODE>
+   ```
+4. Once approved, you will have exclusive tool-enabled control of your agent!
+
