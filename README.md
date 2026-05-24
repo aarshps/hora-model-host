@@ -1,6 +1,13 @@
 # Hora Model Host
 
-> A complete, production-ready deployment harness for hosting Google's **Gemma 4 LLM** on a CPU-only VPS, exposed as a secure, OpenAI-compatible public API behind a FastAPI reverse proxy gateway — with full Bitwarden vault integration and OpenCode TUI support.
+> A reusable, **model-agnostic** harness for hosting open-source LLMs on a
+> CPU-only VPS — with a secure OpenAI-compatible gateway, perf-tuning
+> scripts, and one-shot installers for the **OpenClaw** and **Hermes Agent**
+> messaging agents (Telegram, Discord, Slack, WhatsApp…).
+>
+> Reference deployment: **"Con Taboclo"**, a personal Telegram agent
+> running on a Contabo VPS. Fork the repo, swap the env values, and you
+> have your own.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)]()
 [![Python](https://img.shields.io/badge/python-3.12+-blue.svg)]()
@@ -9,555 +16,246 @@
 
 ---
 
-## Table of Contents
+## What you get
 
-- [Architecture Overview](#architecture-overview)
-- [Dependencies](#dependencies)
-- [Repository Structure](#repository-structure)
-- [Quick Start (Consuming the API)](#quick-start-consuming-the-api)
-- [End-to-End Setup Guide](#end-to-end-setup-guide)
-  - [Phase 1: VPS Provisioning](#phase-1-vps-provisioning)
-  - [Phase 2: Ollama & Model Setup](#phase-2-ollama--model-setup)
-  - [Phase 3: Gateway Deployment](#phase-3-gateway-deployment)
-  - [Phase 4: Firewall & Security](#phase-4-firewall--security)
-  - [Phase 5: Verification](#phase-5-verification)
-- [Client Integration](#client-integration)
-  - [cURL](#curl-example)
-  - [Python OpenAI SDK](#python-openai-sdk)
-  - [Node.js OpenAI SDK](#nodejs-openai-sdk)
-  - [OpenCode TUI](#opencode-tui-integration)
-- [Bitwarden Secrets Vault Sync](#bitwarden-secrets-vault-sync)
-- [Operations & Troubleshooting](#operations--troubleshooting)
-- [Performance Benchmarks](#performance-benchmarks)
-- [Lessons Learned](#lessons-learned)
+| Layer | What it is | File |
+|---|---|---|
+| **Model serving** | FastAPI gateway in front of Ollama, Bearer-auth'd, streaming | `gateway/` |
+| **Perf tuning** | One-shot script: KV-cache quantization, flash attention, keep-alive | `deploy/tune_ollama.sh` |
+| **Benchmark** | Standardized t/s harness so you can compare models | `deploy/benchmark_model.py` |
+| **OpenClaw install** | One-shot installer for the OpenClaw Telegram agent | `deploy/install_openclaw.sh` |
+| **Hermes Agent install** | One-shot installer for Hermes Agent (with OpenClaw migration) | `deploy/install_hermes.sh` |
+| **Agent templates** | Reusable `openclaw.json`, `hermes-config.yaml`, `IDENTITY.md`, `TOOLS.md` | `deploy/templates/` |
+| **Secrets vaulting** | Sync `.env` + SSH keys to Bitwarden | `deploy/sync_secrets.py` |
+| **Docs** | Full setup runbooks, decision matrices, perf math | [wiki](https://github.com/aarshps/hora-model-host/wiki) |
 
 ---
 
-## Architecture Overview
+## Five-minute happy path
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         INTERNET                                │
-│                                                                 │
-│   [Any OpenAI-compatible Client]                                │
-│        curl / Python SDK / Node SDK / OpenCode TUI              │
-│                           │                                     │
-│                   Authorization: Bearer <KEY>                   │
-└───────────────────────────┼─────────────────────────────────────┘
-                            │ Port 8000 (Public)
-┌───────────────────────────┼─────────────────────────────────────┐
-│                    CONTABO VPS (185.194.218.92)                  │
-│                           │                                     │
-│              ┌────────────▼────────────────┐                    │
-│              │   FastAPI Gateway (Uvicorn) │                    │
-│              │   - Bearer Auth Validation  │                    │
-│              │   - Async Stream Proxy      │                    │
-│              │   - CORS Middleware         │                    │
-│              └────────────┬────────────────┘                    │
-│                           │ localhost:11434 (Private)            │
-│              ┌────────────▼────────────────┐                    │
-│              │     Ollama Daemon           │                    │
-│              │   - Gemma 4 E4B (9.6 GB)   │                    │
-│              │   - CPU AVX2 Optimized      │                    │
-│              └─────────────────────────────┘                    │
-│                                                                 │
-│   [UFW Firewall]                                                │
-│     ✅ Port 8000/tcp  → Public (Gateway)                        │
-│     ✅ Port 22/tcp    → SSH                                     │
-│     ❌ Port 11434/tcp → Blocked (Ollama internal only)          │
-└─────────────────────────────────────────────────────────────────┘
+```bash
+ssh -i test_key root@<VPS_IP>
+git clone https://github.com/aarshps/hora-model-host /opt/hora-model-host
+cd /opt/hora-model-host
+
+# 1. Gateway + Ollama
+bash deploy/install.sh
+
+# 2. Apply the perf-tuning preset (one of the highest-impact knobs)
+sudo deploy/tune_ollama.sh --apply
+
+# 3. Pick + pull a fast model — see wiki/Choosing-a-Model for the matrix
+ollama pull qwen2.5:7b-instruct
+sed -i 's/^MODEL_ID=.*/MODEL_ID=qwen2.5:7b-instruct/' .env
+systemctl restart gateway
+
+# 4. Wire up Telegram — pick ONE:
+#    OpenClaw (stable, since Nov 2025):
+sudo MODEL_ID=qwen2.5:7b-instruct \
+     TELEGRAM_BOT_TOKEN=<token-from-BotFather> \
+     deploy/install_openclaw.sh
+
+#    OR Hermes Agent (newer, self-improving, since Feb 2026):
+sudo MODEL_ID=qwen2.5:7b-instruct \
+     TELEGRAM_BOT_TOKEN=<token-from-BotFather> \
+     deploy/install_hermes.sh
+
+# 5. On Telegram: DM your bot, send /start, copy the pairing code,
+#    then on the VPS:
+openclaw pairing approve telegram <CODE>     # or: hermes pair approve telegram <CODE>
 ```
 
----
-
-## Dependencies
-
-### 🖥️ VPS Server-Side (Remote Host)
-
-| Dependency | Version | Purpose | Install Command |
-|---|---|---|---|
-| **Ubuntu/Debian** | 24.04 LTS | Host operating system | — |
-| **Python** | 3.12+ | Gateway runtime | `apt install python3 python3-venv python3-pip` |
-| **Ollama** | latest | LLM inference engine | `curl -fsSL https://ollama.com/install.sh \| sh` |
-| **systemd** | built-in | Service management | Pre-installed on Ubuntu |
-| **UFW** | built-in | Firewall | `apt install ufw` |
-| **curl, git** | latest | Utilities | `apt install curl git` |
-
-**Python packages** (installed in venv via `gateway/requirements.txt`):
-
-| Package | Version | Purpose |
-|---|---|---|
-| `fastapi` | ≥0.110.0 | API framework for the gateway |
-| `uvicorn` | ≥0.28.0 | ASGI server |
-| `httpx` | ≥0.27.0 | Async HTTP client for reverse proxying to Ollama |
-| `python-dotenv` | ≥1.0.1 | `.env` file loader |
-
-### 💻 Local Developer Workstation
-
-| Dependency | Version | Purpose | Install |
-|---|---|---|---|
-| **Git** | latest | Version control | [git-scm.com](https://git-scm.com) |
-| **Python** | 3.12+ | Running deploy/sync scripts | [python.org](https://python.org) |
-| **Node.js** | 18+ | Required by Bitwarden CLI & OpenCode | [nodejs.org](https://nodejs.org) |
-| **npm** | 10+ | Package manager for Node.js tools | Bundled with Node.js |
-| **Bitwarden CLI** | latest | Secrets vault management | `npm install -g @bitwarden/cli` |
-| **OpenCode** | latest | Terminal-based AI assistant (optional) | [opencode.ai/download](https://opencode.ai/download) |
-| **SSH client** | built-in | VPS access | Pre-installed on Windows/macOS/Linux |
-
-### ☁️ Third-Party Services
-
-| Service | Purpose | Required? |
-|---|---|---|
-| **VPS provider** (e.g. Contabo) | Remote host for Ollama + Gateway | ✅ Yes |
-| **GitHub** | Repository and wiki hosting | ✅ Yes |
-| **Bitwarden** | Encrypted secrets vault | 🟡 Recommended |
+You now have a self-hosted personal AI agent reachable from your phone.
 
 ---
 
-## Repository Structure
+## Architecture (TL;DR)
+
+```
+[Telegram] [Discord] [SDKs] [curl] [OpenCode TUI]
+     │         │       │      │         │
+     ▼         ▼       ▼      ▼         ▼
+  ┌─────────────────────────────────────┐
+  │ Agent layer (OpenClaw / Hermes)     │  ← optional, swap freely
+  └────────────────┬────────────────────┘
+                   │ OpenAI-compatible HTTP + Bearer
+  ┌────────────────▼────────────────────┐
+  │ FastAPI gateway (this repo, :8000)  │
+  └────────────────┬────────────────────┘
+                   │ localhost:11434
+  ┌────────────────▼────────────────────┐
+  │ Ollama daemon (tuned)               │
+  └────────────────┬────────────────────┘
+                   │
+              [Your model]
+```
+
+The harness deliberately separates **model serving** from **agent logic** so
+each can be swapped independently. See [Architecture](https://github.com/aarshps/hora-model-host/wiki/Architecture).
+
+---
+
+## Repository layout
 
 ```
 hora-model-host/
-├── gateway/                      # FastAPI Gateway Application
-│   ├── __init__.py               # Python package marker
-│   ├── main.py                   # FastAPI app with auth, proxy, discovery endpoints
-│   ├── config.py                 # Environment variables parser (dotenv)
-│   └── requirements.txt          # Python dependencies for the gateway
-├── deploy/                       # Deployment & Operations Scripts
-│   ├── install.sh                # One-shot VPS bootstrap script (Ollama + Gateway + systemd)
-│   ├── gateway.service           # Systemd unit file template
-│   ├── sync_secrets.py           # Bitwarden vault sync utility (Python)
-│   └── sync_secrets.ps1          # PowerShell wrapper for vault sync
-├── .env                          # 🔒 LOCAL ONLY - secrets (gitignored)
-├── .env.example                  # Template showing required environment variables
-├── .gitignore                    # Protects .env, SSH keys, reports from commits
-├── test_key / test_key.pub       # 🔒 LOCAL ONLY - SSH keypair for VPS (gitignored)
-├── performance_report.md         # 🔒 LOCAL ONLY - benchmark results (gitignored)
-├── agent_skills.md               # AI agent knowledge transfer manual
-└── README.md                     # This file
+├── gateway/                     # FastAPI gateway (model-agnostic)
+│   ├── main.py                  # auth, proxy, discovery endpoints
+│   ├── config.py                # env loader (MODEL_ID, API_KEY, …)
+│   └── requirements.txt
+├── deploy/
+│   ├── install.sh               # bootstrap Ollama + gateway + systemd
+│   ├── gateway.service          # systemd unit for the gateway
+│   ├── tune_ollama.sh           # ★ apply perf-tuning systemd override
+│   ├── benchmark_model.py       # ★ standardized t/s benchmark
+│   ├── install_openclaw.sh      # ★ Telegram agent installer (OpenClaw)
+│   ├── install_hermes.sh        # ★ Telegram agent installer (Hermes Agent)
+│   ├── setup_vps_models.py      # pull multiple models in one shot
+│   ├── verify_new_models.py     # smoke-test installed models
+│   ├── sync_secrets.py          # vault .env + SSH key to Bitwarden
+│   ├── sync_secrets.ps1         # PowerShell wrapper for above
+│   └── templates/
+│       ├── openclaw.json        # ★ reusable OpenClaw config
+│       ├── hermes-config.yaml   # ★ reusable Hermes Agent config
+│       ├── IDENTITY.md          # ★ persona file for the agent
+│       └── TOOLS.md             # ★ tool-use guidance for the agent
+├── .env                         # 🔒 LOCAL ONLY — gitignored
+├── .env.example                 # template (MODEL_ID, API_KEY, TELEGRAM_BOT_TOKEN, …)
+├── agent_skills.md              # knowledge-transfer manual for AI agents
+└── README.md
 ```
 
-### Environment Variables Reference
+★ = new in v1.1 (the reusability + agent-layer overhaul).
+
+---
+
+## Environment variables
 
 | Variable | Description | Example |
 |---|---|---|
 | `PORT` | Gateway listen port | `8000` |
 | `OLLAMA_BASE_URL` | Internal Ollama endpoint | `http://localhost:11434` |
-| `API_KEY` | Bearer authentication token | `hora_live_8e94a7cb...` |
-| `GEMMA_MODEL` | Ollama model identifier | `gemma4:e4b` |
-| `BW_PASSWORD` | Bitwarden master password (for vault sync) | `your_master_password` |
+| `API_KEY` | Bearer token clients must send | `hora_live_8e94a7cb…` |
+| `MODEL_ID` | Ollama tag to serve | `qwen2.5:7b-instruct` |
+| `DEPLOYMENT_NAME` | Human label in discovery responses | `Con Taboclo VPS` |
+| `BW_PASSWORD` | Bitwarden master password (only for sync_secrets) | — |
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather (only for agent installers) | `123:abc…` |
+| `GEMMA_MODEL` | **Deprecated** alias for `MODEL_ID`, still honored | — |
 
 ---
 
-## Quick Start (Consuming the API)
+## Quick client examples
 
-If the gateway is already deployed and you just want to **use** the API:
+### cURL
 
-### cURL Example
 ```bash
-curl -X POST http://185.194.218.92:8000/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+curl -X POST http://<VPS_IP>:8000/v1/chat/completions \
+  -H "Authorization: Bearer <API_KEY>" \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemma4:e4b",
-    "messages": [
-      {"role": "system", "content": "You are a helpful assistant."},
-      {"role": "user", "content": "Hello!"}
-    ],
-    "stream": false
-  }'
+  -d '{"model":"qwen2.5:7b-instruct","messages":[{"role":"user","content":"Hello"}],"stream":false}'
 ```
 
-### Python OpenAI SDK
-```bash
-pip install openai
-```
+### Python (OpenAI SDK)
+
 ```python
 from openai import OpenAI
 
-client = OpenAI(
-    api_key="YOUR_API_KEY",
-    base_url="http://185.194.218.92:8000/v1"
+client = OpenAI(api_key="<KEY>", base_url="http://<VPS_IP>:8000/v1")
+stream = client.chat.completions.create(
+    model="qwen2.5:7b-instruct",
+    messages=[{"role": "user", "content": "Hi!"}],
+    stream=True,
 )
-
-response = client.chat.completions.create(
-    model="gemma4:e4b",
-    messages=[
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Explain quantum physics in one sentence."}
-    ],
-    stream=True
-)
-
-for chunk in response:
+for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="", flush=True)
 ```
 
-### Node.js OpenAI SDK
-```bash
-npm install openai
-```
-```javascript
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  baseURL: 'http://185.194.218.92:8000/v1',
-  apiKey: 'YOUR_API_KEY',
-});
-
-async function main() {
-  const stream = await openai.chat.completions.create({
-    model: 'gemma4:e4b',
-    messages: [{ role: 'user', content: 'What is 15 * 15?' }],
-    stream: true,
-  });
-  for await (const chunk of stream) {
-    process.stdout.write(chunk.choices[0]?.delta?.content || '');
-  }
-}
-main();
-```
+More clients (Node, OpenCode TUI, OpenClaw, Hermes) in the
+[API Reference](https://github.com/aarshps/hora-model-host/wiki/API-Reference).
 
 ---
 
-## End-to-End Setup Guide
-
-Follow these steps to replicate this entire setup from scratch on your own VPS.
-
-### Phase 1: VPS Provisioning
-
-1. **Provision a VPS** with at least 6 vCPU, 16 GB RAM, and 100 GB SSD (e.g., [Contabo VPS M](https://contabo.com)). For hosting frontier reasoning or MoE models, 12 vCPU and 48 GB RAM (e.g., Contabo VPS XL) is recommended.
-2. **Choose Ubuntu 24.04 LTS** as the operating system.
-3. **Note your server's public IP address** (e.g., `185.194.218.92`).
-4. **Generate an SSH keypair** for secure access:
-   ```bash
-   ssh-keygen -t rsa -b 2048 -f ./test_key -N ""
-   ```
-5. **Copy the public key** to the VPS:
-   ```bash
-   ssh-copy-id -i ./test_key.pub root@YOUR_VPS_IP
-   ```
-6. **Verify CPU capabilities** (should show AVX2 support):
-   ```bash
-   ssh -i ./test_key root@YOUR_VPS_IP "lscpu | grep -i avx"
-   ```
-
-### Phase 2: Ollama & Model Setup
-
-1. **SSH into the VPS**:
-   ```bash
-   ssh -i ./test_key root@YOUR_VPS_IP
-   ```
-2. **Install system dependencies**:
-   ```bash
-   apt update -y && apt install -y python3 python3-venv python3-pip curl git
-   ```
-3. **Install Ollama**:
-   ```bash
-   curl -fsSL https://ollama.com/install.sh | sh
-   ```
-4. **Enable and start Ollama**:
-   ```bash
-   systemctl enable ollama && systemctl start ollama
-   ```
-5. **Pull the Gemma 4 model** (this takes 5-15 minutes depending on network speed):
-   ```bash
-   ollama pull gemma4:e4b
-   ```
-6. **Verify the model is available**:
-   ```bash
-   ollama list
-   curl http://localhost:11434/v1/models
-   ```
-
-### Phase 3: Gateway Deployment
-
-1. **Clone this repository onto the VPS**:
-   ```bash
-   mkdir -p /opt/hora-model-host
-   cd /opt/hora-model-host
-   git clone https://github.com/YOUR_USER/hora-model-host.git .
-   ```
-   Or use SFTP to upload files from your local machine.
-
-2. **Create the Python virtual environment**:
-   ```bash
-   python3 -m venv /opt/hora-model-host/venv
-   /opt/hora-model-host/venv/bin/pip install --upgrade pip
-   /opt/hora-model-host/venv/bin/pip install -r gateway/requirements.txt
-   ```
-
-3. **Create the `.env` configuration**:
-   ```bash
-   cat <<EOF > /opt/hora-model-host/.env
-   PORT=8000
-   OLLAMA_BASE_URL=http://localhost:11434
-   API_KEY=$(python3 -c "import secrets; print(f'hora_live_{secrets.token_hex(16)}')")
-   GEMMA_MODEL=gemma4:e4b
-   EOF
-   chmod 600 /opt/hora-model-host/.env
-   cat /opt/hora-model-host/.env   # Note your generated API_KEY!
-   ```
-
-4. **Install the systemd service**:
-   ```bash
-   cp deploy/gateway.service /etc/systemd/system/gateway.service
-   systemctl daemon-reload
-   systemctl enable gateway
-   systemctl start gateway
-   ```
-
-5. **Verify the service is running**:
-   ```bash
-   systemctl status gateway
-   journalctl -u gateway -f -n 20
-   ```
-
-### Phase 4: Firewall & Security
-
-1. **Configure UFW**:
-   ```bash
-   ufw default deny incoming
-   ufw default allow outgoing
-   ufw allow 22/tcp       # SSH access
-   ufw allow 8000/tcp     # FastAPI Gateway (public)
-   # Do NOT allow 11434 — Ollama must stay internal
-   ufw enable
-   ```
-
-2. **Verify firewall rules**:
-   ```bash
-   ufw status verbose
-   ```
-
-### Phase 5: Verification
-
-From your **local machine**, test all endpoints:
-
-```bash
-# 1. Health check (public, no auth)
-curl http://YOUR_VPS_IP:8000/health
-
-# 2. Root discovery (public, no auth)
-curl http://YOUR_VPS_IP:8000/
-
-# 3. Rejected request (no API key → 401)
-curl -X POST http://YOUR_VPS_IP:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gemma4:e4b","messages":[{"role":"user","content":"Hi"}]}'
-
-# 4. Authenticated request (valid API key → 200)
-curl -X POST http://YOUR_VPS_IP:8000/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gemma4:e4b","messages":[{"role":"user","content":"Say hello in one word."}],"stream":false}'
-```
-
-> ⚠️ **First request may take 1-2 minutes** as Ollama loads the 9.6 GB model into RAM. Subsequent requests respond in <1 second.
-
----
-
-## OpenCode TUI Integration
-
-[OpenCode](https://opencode.ai) is a terminal-based AI assistant that supports custom OpenAI-compatible providers. This allows you to chat with your self-hosted models directly from a terminal TUI.
-
-### Prerequisites
-- Install Node.js 18+ and npm
-- Install OpenCode: download from [opencode.ai/download](https://opencode.ai/download)
-
-### Step 1: Configure Provider
-
-Create/edit the config file:
-- **Linux/macOS**: `~/.config/opencode/opencode.json`
-- **Windows**: `C:\Users\<username>\.config\opencode\opencode.json`
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "model": "hora-model-host/qwen3.6:35b",
-  "provider": {
-    "hora-model-host": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "Hora Model Host",
-      "options": {
-        "baseURL": "http://YOUR_VPS_IP:8000/v1",
-        "timeout": 600000,
-        "chunkTimeout": 60000
-      },
-      "models": {
-        "gemma4:e4b": {
-          "name": "Gemma 4 (4B)"
-        },
-        "gemma4:31b": {
-          "name": "Gemma 4 (31B)"
-        },
-        "qwen3.6:35b": {
-          "name": "Qwen 3.6 (35B-A3B)"
-        }
-      }
-    }
-  }
-}
-```
-
-> 💡 **Why high timeouts?** The first request triggers a cold model load (~50s-2min). Set `timeout: 600000` (10 min) and `chunkTimeout: 60000` (1 min) to avoid premature disconnects.
-
-### Step 2: Configure Credentials
-
-Create/edit the auth file:
-- **Linux/macOS**: `~/.local/share/opencode/auth.json`
-- **Windows**: `C:\Users\<username>\.local\share\opencode\auth.json`
-
-```json
-{
-  "hora-model-host": {
-    "type": "api",
-    "key": "YOUR_API_KEY"
-  }
-}
-```
-
-### Step 3: Run!
-
-```bash
-# One-shot query using the default model (Qwen 3.6 35B):
-opencode run "Tell me a fun space fact." --pure --dangerously-skip-permissions
-
-# One-shot query targeting Gemma 4 31B:
-opencode run "Tell me a fun space fact." --model hora-model-host/gemma4:31b --pure --dangerously-skip-permissions
-
-# Interactive chat session:
-opencode run --pure --dangerously-skip-permissions
-```
-
-
----
-
-## Bitwarden Secrets Vault Sync
-
-This repository includes an automated utility to securely vault your sensitive files (`.env` and SSH key `test_key`) into a `"Hora"` folder in your Bitwarden Vault.
-
-### Prerequisites
-1. Install Bitwarden CLI: `npm install -g @bitwarden/cli`
-2. Log in: `bw login`
-3. Add your master password to `.env`:
-   ```env
-   BW_PASSWORD=your_bitwarden_master_password
-   ```
-
-### Run the Sync
-
-```powershell
-# Windows PowerShell:
-.\deploy\sync_secrets.ps1
-
-# Cross-platform Python:
-python deploy/sync_secrets.py
-```
-
-### What It Does
-1. Unlocks your Bitwarden vault using the `BW_PASSWORD` from `.env`
-2. Finds or creates a folder named `"Hora"` in your vault
-3. Creates/updates two Secure Notes:
-   - `Hora Model Host - Environment Secrets (.env)` — your full `.env` contents
-   - `Hora Model Host - SSH Private Key (test_key)` — your SSH private key
-4. Prevents duplicates by updating existing items in-place
-
-### Security Guarantees
-| File | Contains | Git-tracked? |
-|---|---|---|
-| `.env` | API_KEY, BW_PASSWORD, all secrets | ❌ Gitignored |
-| `test_key` / `test_key.pub` | SSH keypair | ❌ Gitignored |
-| `performance_report.md` | Benchmark data | ❌ Gitignored |
-| `.env.example` | Placeholder template only | ✅ Safe |
-
----
-
-## Operations & Troubleshooting
-
-### Monitoring
-
-```bash
-# Check gateway service status
-systemctl status gateway
-
-# Stream live logs
-journalctl -u gateway -f -n 100
-
-# Check Ollama health
-curl http://localhost:11434/api/tags
-```
-
-### Restarting Services
-
-```bash
-# Restart gateway after code/config changes
-systemctl restart gateway
-
-# Restart Ollama
-systemctl restart ollama
-```
-
-### API Key Rotation
-
-1. Generate a new key: `python3 -c "import secrets; print(f'hora_live_{secrets.token_hex(16)}')"`
-2. Update `/opt/hora-model-host/.env` on VPS
-3. Update your local `.env`
-4. Restart gateway: `systemctl restart gateway`
-5. Update client configs (OpenCode auth.json, etc.)
-6. Re-sync to Bitwarden: `python deploy/sync_secrets.py`
-
-### Common Issues
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| First request takes 1-2 min | Ollama loading model into RAM (cold start) | Wait; or set `OLLAMA_KEEP_ALIVE=5m` |
-| `401 Unauthorized` | Missing or wrong Bearer token | Verify API_KEY in `.env` and client config |
-| OpenCode hangs on connect | Missing public `/` or `/v1` endpoints | Ensure gateway has unauthenticated root routes |
-| `502 Bad Gateway` | Ollama not running or crashed | `systemctl restart ollama` |
-| `npm` hooks fail during install | `node` not on subprocess PATH | Add Node.js to PATH explicitly |
-
----
-
-## Performance Benchmarks
+## Performance
 
 | Metric | Value |
 |---|---|
-| **Hardware** | AMD EPYC CPU (12 Cores, 48GB RAM, No GPU) |
-| **Model** | Gemma 4 E4B (4-bit quantized, 9.6 GB) |
-| **Cold Start (TTFT)** | ~50 seconds – 2 minutes |
-| **Active Generation** | 9.13 tokens/second |
-| **Memory Usage** | ~34 MB (gateway) + ~9.6 GB (model in RAM) |
-| **Gateway Overhead** | <1ms per request (pure async proxy) |
+| **Hardware** | AMD EPYC, 12 cores, 48 GB RAM, no GPU (Contabo VPS XL) |
+| **Gateway overhead** | <1 ms per request |
+| **qwen2.5:7b-instruct Q4** (recommended) | 4–7 tokens/sec |
+| **phi-4-mini Q4** (snappiest agentic option) | 6–10 tokens/sec |
+| **qwen3.6:35b** (legacy — too big for CPU) | 1.19 tokens/sec |
+| **Cold start** with `OLLAMA_KEEP_ALIVE=-1` | 0 s after first load |
+
+If you want to go fast: read [Performance Tuning](https://github.com/aarshps/hora-model-host/wiki/Performance-Tuning).
+There's a memory-bandwidth ceiling on CPU inference that no amount of
+software trickery can dodge — the fix is **smaller weights**.
 
 ---
 
-## Lessons Learned
+## Bitwarden secrets vault (optional)
 
-### 🪤 The "Pre-flight Check" Trap
-Many OpenAI-compatible SDKs (including `@ai-sdk/openai-compatible` used by OpenCode) send unauthenticated `GET /` or `GET /v1` requests before making actual API calls. If your gateway returns `401 Unauthorized` on these routes, clients will silently fail or hang. **Always expose public discovery endpoints.**
-
-### ⏱️ CPU RAM Lifecycles & Keep-Alive
-Ollama unloads models after 5 minutes of inactivity by default. For production use, configure permanent residency:
 ```bash
-# Add to Ollama's systemd override
-systemctl edit ollama
-# Add under [Service]:
-Environment="OLLAMA_KEEP_ALIVE=5m"
+npm install -g @bitwarden/cli
+bw login
+echo 'BW_PASSWORD=<master-password>' >> .env
+python deploy/sync_secrets.py
 ```
 
-### 🔧 Environment Path Inheritance
-When npm postinstall hooks run in subprocess environments, they often can't find `node` because the parent shell's PATH isn't inherited. Always construct explicit PATH strings when launching automated scripts.
-
-### 🔐 Secrets Hygiene
-Never commit `.env` files. Use `.env.example` as a public template, `.gitignore` to block secrets, and Bitwarden CLI to vault credentials for cross-machine recovery.
+Vaults your `.env` and `test_key` into a `Hora` folder in your Bitwarden
+vault. Safe across machine wipes. Full details in
+[Deployment Guide](https://github.com/aarshps/hora-model-host/wiki/Deployment-Guide#7-bitwarden-vault-sync).
 
 ---
 
-## Further Reading
+## Choosing an agent layer
 
-- 📖 **[Wiki: Home](https://github.com/aarshps/hora-model-host/wiki)** — Project overview and navigation
-- 📖 **[Wiki: Architecture](https://github.com/aarshps/hora-model-host/wiki/Architecture)** — System design deep-dive
-- 📖 **[Wiki: API Reference](https://github.com/aarshps/hora-model-host/wiki/API-Reference)** — Complete endpoint documentation
-- 📖 **[Wiki: Deployment Guide](https://github.com/aarshps/hora-model-host/wiki/Deployment-Guide)** — Full operational runbook
+Two well-supported open-source options in 2026 — both MIT, both multi-channel,
+both work with Ollama:
+
+| | OpenClaw | Hermes Agent |
+|---|---|---|
+| Released | Nov 2025 (renamed from Clawdbot in Jan 2026) | Feb 2026 |
+| Author | Peter Steinberger | Nous Research |
+| Stars | 15K+ | Currently #1 trending in 2026 |
+| Differentiator | Most-battle-tested, widest channel support | **Self-improving** — writes its own skills from experience |
+| Migration helper | — | `hermes claw migrate` imports OpenClaw state |
+
+Full side-by-side in [Choosing an Agent](https://github.com/aarshps/hora-model-host/wiki/Choosing-an-Agent).
+
+---
+
+## Lessons learned
+
+### 🪤 The "pre-flight check" trap
+OpenAI-compatible SDKs send unauthenticated `GET /` / `GET /v1` before any
+real API call. If those return 401, clients silently hang. The gateway
+deliberately exposes them as public — don't remove that.
+
+### ⏱️ Cold-start latency is structural
+On CPU, the first request loads weights from disk into RAM
+(~50 s for 35B models). With `OLLAMA_KEEP_ALIVE=-1` and a single resident
+model, you pay it once. With `KEEP_ALIVE=5m` you pay it after every quiet
+period. `tune_ollama.sh --apply` defaults to the former.
+
+### ⚡ The bottleneck is bandwidth, not the gateway
+The gateway adds <1 ms. The model layer adds seconds. Don't optimize the
+proxy — optimize the model choice.
+
+### 🔐 Secrets hygiene
+Never commit `.env`. `.env.example` is public, real `.env` is gitignored,
+both vaulted in Bitwarden via `sync_secrets.py`. Same for `test_key`.
+
+---
+
+## Further reading
+
+- 📖 [Wiki home](https://github.com/aarshps/hora-model-host/wiki) — full doc map
+- 📖 [Architecture](https://github.com/aarshps/hora-model-host/wiki/Architecture)
+- 📖 [Performance Tuning](https://github.com/aarshps/hora-model-host/wiki/Performance-Tuning)
+- 📖 [Choosing a Model](https://github.com/aarshps/hora-model-host/wiki/Choosing-a-Model)
+- 📖 [Choosing an Agent](https://github.com/aarshps/hora-model-host/wiki/Choosing-an-Agent)
+- 📖 [OpenClaw Telegram Bot](https://github.com/aarshps/hora-model-host/wiki/OpenClaw-Telegram-Bot)
+- 📖 [Hermes Agent Telegram Bot](https://github.com/aarshps/hora-model-host/wiki/Hermes-Agent-Telegram-Bot)
+- 📖 [API Reference](https://github.com/aarshps/hora-model-host/wiki/API-Reference)
+- 📖 [Deployment Guide](https://github.com/aarshps/hora-model-host/wiki/Deployment-Guide)

@@ -1,0 +1,50 @@
+{
+  "_comment": "Hora Model Host — OpenClaw config template. Copy to ~/.openclaw/openclaw.json and edit. Replace ${MODEL_ID} and ${TELEGRAM_BOT_TOKEN}.",
+
+  "agent": {
+    "model": "ollama/${MODEL_ID}",
+    "ollama": {
+      "baseURL": "http://127.0.0.1:11434"
+    },
+    "systemPromptFiles": [
+      "IDENTITY.md",
+      "TOOLS.md"
+    ]
+  },
+
+  "agents": {
+    "defaults": {
+      "workspace": "/root/.openclaw/workspace",
+      "sandbox": {
+        "mode": "non-main",
+        "allow": [
+          "bash",
+          "process",
+          "read",
+          "write",
+          "edit",
+          "sessions_list",
+          "sessions_history",
+          "sessions_send",
+          "sessions_spawn",
+          "browser",
+          "cron"
+        ]
+      }
+    }
+  },
+
+  "channels": {
+    "telegram": {
+      "botToken": "${TELEGRAM_BOT_TOKEN}",
+      "dmPolicy": "pairing",
+      "allowFrom": [],
+      "streaming": true
+    }
+  },
+
+  "gateway": {
+    "host": "127.0.0.1",
+    "port": 18789
+  }
+}

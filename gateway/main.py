@@ -1,3 +1,11 @@
+"""Hora Model Host — FastAPI Gateway.
+
+A thin, model-agnostic reverse proxy in front of an Ollama daemon. Adds
+bearer-token auth, OpenAI-compatible discovery endpoints, and chunked
+streaming. The actual model is whatever you configure via `MODEL_ID` in
+the environment — the gateway itself doesn't care.
+"""
+
 import httpx
 from fastapi import FastAPI, Request, HTTPException, Depends, status
 from fastapi.responses import StreamingResponse
@@ -6,9 +14,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from gateway import config
 
 app = FastAPI(
-    title="Hora Model Host API Gateway",
-    description="Secure public API gateway for Gemma 4 LLM",
-    version="1.0.0"
+    title=f"{config.DEPLOYMENT_NAME} API Gateway",
+    description=(
+        "Secure, OpenAI-compatible public API gateway for self-hosted LLMs "
+        "served by Ollama. Model-agnostic — set MODEL_ID in .env to swap models."
+    ),
+    version="1.1.0",
 )
 
 # Enable CORS for convenience in various client environments
@@ -27,7 +38,7 @@ def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)
     if not config.API_KEY:
         # If API_KEY is empty/None in config, we bypass auth (not recommended in production)
         return None
-    
+
     if not credentials or credentials.credentials != config.API_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -45,7 +56,9 @@ async def root_check():
     return {
         "status": "healthy",
         "gateway": "online",
-        "message": "Hora Model Host Gateway is online."
+        "deployment": config.DEPLOYMENT_NAME,
+        "model": config.MODEL_ID,
+        "message": f"{config.DEPLOYMENT_NAME} Gateway is online."
     }
 
 @app.get("/v1", status_code=200)
@@ -54,7 +67,9 @@ async def v1_check():
     return {
         "status": "healthy",
         "gateway": "online",
-        "message": "Hora Model Host Gateway API v1 is online."
+        "deployment": config.DEPLOYMENT_NAME,
+        "model": config.MODEL_ID,
+        "message": f"{config.DEPLOYMENT_NAME} Gateway API v1 is online."
     }
 
 @app.get("/health", status_code=200)
@@ -66,31 +81,32 @@ async def health_check():
         ollama_status = "online" if response.status_code == 200 else "degraded"
     except Exception:
         ollama_status = "offline"
-        
+
     return {
         "status": "healthy",
         "gateway": "online",
         "ollama": ollama_status,
-        "model": config.GEMMA_MODEL
+        "model": config.MODEL_ID,
+        "deployment": config.DEPLOYMENT_NAME,
     }
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"])
 async def proxy_request(request: Request, path: str, api_key: str = Depends(verify_api_key)):
     """Catch-all reverse proxy that forwards all authorized requests to Ollama."""
     url = f"{config.OLLAMA_BASE_URL}/{path}"
-    
+
     # Forward query parameters
     params = dict(request.query_params)
-    
+
     # Read incoming request body
     body = await request.body()
-    
+
     # Prepare outgoing headers (strip host, authorization, etc. to avoid conflicts)
     headers = {}
     for k, v in request.headers.items():
         if k.lower() not in ["host", "authorization", "content-length"]:
             headers[k] = v
-            
+
     # Create the request to the local Ollama instance
     rp_req = client.build_request(
         method=request.method,
@@ -99,7 +115,7 @@ async def proxy_request(request: Request, path: str, api_key: str = Depends(veri
         headers=headers,
         content=body
     )
-    
+
     # Send the request and stream the response back
     try:
         rp_resp = await client.send(rp_req, stream=True)

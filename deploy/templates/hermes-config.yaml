@@ -1,0 +1,43 @@
+# =============================================================================
+# Hora Model Host — Hermes Agent config template
+# Copy to ~/.hermes/config.yaml. Replace ${MODEL_ID}, ${TELEGRAM_BOT_TOKEN}.
+# =============================================================================
+
+agent:
+  name: "Con Taboclo"
+  workspace: /root/.hermes/workspace
+  identity_file: /root/.hermes/IDENTITY.md
+
+model:
+  default: ${MODEL_ID}
+  provider: custom
+  base_url: http://localhost:11434/v1
+  api_key: ""           # Ollama doesn't require one
+  context_length: 8192
+
+gateways:
+  telegram:
+    enabled: true
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    dm_policy: pairing  # require /pair handshake before talking
+    streaming: true
+
+tools:
+  enabled:
+    - bash
+    - read
+    - write
+    - edit
+    - browser
+    - web_search
+    - cron
+    - sessions
+
+memory:
+  fts5_session_search: true
+  user_model: true
+  skill_autocreate: true     # the famous "learning loop"
+
+learning:
+  nudge_persist_knowledge: true
+  improve_skills_in_use: true
