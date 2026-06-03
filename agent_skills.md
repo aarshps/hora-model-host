@@ -239,7 +239,7 @@ OpenClaw is installed globally on the VPS as a self-hosted AI agent platform lin
 | Parameter | Value |
 |---|---|
 | **Telegram Bot** | `@con_taboclou_bot` (http://t.me/con_taboclou_bot) |
-| **Bot Token** | `8083785144:AAH4O8cbAmkFzxGtI2u4TzGyGO4wWtDn1hg` |
+| **Bot Token** | Set via `TELEGRAM_BOT_TOKEN` env var (from @BotFather — never commit) |
 | **Agent ID** | `con-taboclo` |
 | **Display Name** | `"Con Taboclo"` (configured via `IDENTITY.md`) |
 | **Primary LLM** | `ollama/qwen3.6:35b` (local Ollama instance on `http://127.0.0.1:11434`) |
